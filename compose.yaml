@@ -1,0 +1,246 @@
+# ==============================================================================
+# Wazuh Security Lab - Docker Compose
+#
+# 8 long-running containers:
+#   wazuh-manager, wazuh-indexer, wazuh-dashboard  (Wazuh infrastructure)
+#   web-safe, db-safe, legacy-web, web-attack, client-01 (monitored endpoints)
+#
+# Only the Wazuh dashboard is published to the host, and only on 127.0.0.1.
+# Base layout adapted from the official Wazuh single-node Docker deployment
+# (https://github.com/wazuh/wazuh-docker, GPLv2).
+# ==============================================================================
+
+name: wazuh-security-lab
+
+x-endpoint: &endpoint
+  build:
+    context: .
+    dockerfile: endpoints/Dockerfile
+    args:
+      WAZUH_VERSION: ${WAZUH_VERSION:-4.14.10}
+  restart: unless-stopped
+  mem_limit: 384m
+  cpus: 0.5
+  depends_on: []
+  healthcheck:
+    test: ["CMD", "/var/ossec/bin/wazuh-control", "status"]
+    interval: 30s
+    timeout: 10s
+    retries: 5
+    start_period: 120s
+  networks:
+    - labnet
+
+services:
+  # ---------------------------------------------------------------- Wazuh core
+  wazuh-manager:
+    image: wazuh/wazuh-manager:${WAZUH_VERSION:-4.14.10}
+    hostname: wazuh.manager
+    container_name: wazuh-manager
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.5
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 655360
+        hard: 655360
+    environment:
+      - INDEXER_URL=https://wazuh.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${INDEXER_PASSWORD:-SecretPassword}
+      - FILEBEAT_SSL_VERIFICATION_MODE=full
+      - SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem
+      - SSL_CERTIFICATE=/etc/ssl/filebeat.pem
+      - SSL_KEY=/etc/ssl/filebeat.key
+      - API_USERNAME=${API_USER:-wazuh-wui}
+      - API_PASSWORD=${API_PASSWORD:-MyS3cr37P450r.*-}
+    volumes:
+      - wazuh_api_configuration:/var/ossec/api/configuration
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response/bin
+      - wazuh_agentless:/var/ossec/agentless
+      - wazuh_wodles:/var/ossec/wodles
+      - filebeat_etc:/etc/filebeat
+      - filebeat_var:/var/lib/filebeat
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key
+      # Custom manager configuration and lab rules (copied to /var/ossec by
+      # the image entrypoint at every start).
+      - ./wazuh/manager/ossec.conf:/wazuh-config-mount/etc/ossec.conf
+      - ./wazuh/rules/security_lab_rules.xml:/wazuh-config-mount/etc/rules/security_lab_rules.xml
+    healthcheck:
+      test: ["CMD", "/var/ossec/bin/wazuh-control", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 120s
+    networks:
+      - labnet
+
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:${WAZUH_VERSION:-4.14.10}
+    hostname: wazuh.indexer
+    container_name: wazuh-indexer
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.5
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-indexer/config/certs/root-ca.pem
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.key
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.pem
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/admin.pem:/usr/share/wazuh-indexer/config/certs/admin.pem
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/admin-key.pem:/usr/share/wazuh-indexer/config/certs/admin-key.pem
+      - ./wazuh/indexer/wazuh-indexer.yml:/usr/share/wazuh-indexer/config/opensearch.yml
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fks https://localhost:9200 -u admin:${INDEXER_PASSWORD:-SecretPassword} | grep -q wazuh-indexer"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks:
+      - labnet
+
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:${WAZUH_VERSION:-4.14.10}
+    hostname: wazuh.dashboard
+    container_name: wazuh-dashboard
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    depends_on:
+      wazuh-indexer:
+        condition: service_healthy
+      wazuh-manager:
+        condition: service_healthy
+    environment:
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${INDEXER_PASSWORD:-SecretPassword}
+      - WAZUH_API_URL=https://wazuh.manager
+      - DASHBOARD_USERNAME=kibanaserver
+      - DASHBOARD_PASSWORD=kibanaserver
+      - API_USERNAME=${API_USER:-wazuh-wui}
+      - API_PASSWORD=${API_PASSWORD:-MyS3cr37P450r.*-}
+    volumes:
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem
+      - ./wazuh/certs/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem
+      - ./wazuh/dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml
+      - ./wazuh/dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml
+      - wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
+      - wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
+    healthcheck:
+      test: ["CMD", "curl", "-fk", "-s", "-o", "/dev/null", "https://localhost:5601/app/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    ports:
+      # Dashboard is only reachable from the local machine.
+      - "127.0.0.1:${DASHBOARD_PORT:-8443}:5601"
+    networks:
+      - labnet
+
+  # ------------------------------------------------------------------ Endpoints
+  # Five monitored Linux endpoints, all built from the same image
+  # (endpoints/Dockerfile). Per-endpoint differences come from environment
+  # variables (LAB_PROFILE selects the baseline configuration) and from the
+  # scenario engine. Each endpoint keeps its Wazuh agent identity in a
+  # dedicated volume so restarts do not create duplicate agents.
+  web-safe:
+    <<: *endpoint
+    hostname: web-safe
+    container_name: web-safe
+    environment:
+      ENDPOINT_NAME: web-safe
+      LAB_PROFILE: web-safe
+      WAZUH_MANAGER: wazuh-manager
+    volumes:
+      - web-safe-ossec-etc:/var/ossec/etc
+
+  db-safe:
+    <<: *endpoint
+    hostname: db-safe
+    container_name: db-safe
+    environment:
+      ENDPOINT_NAME: db-safe
+      LAB_PROFILE: db-safe
+      WAZUH_MANAGER: wazuh-manager
+    volumes:
+      - db-safe-ossec-etc:/var/ossec/etc
+
+  legacy-web:
+    <<: *endpoint
+    hostname: legacy-web
+    container_name: legacy-web
+    environment:
+      ENDPOINT_NAME: legacy-web
+      LAB_PROFILE: legacy-web
+      WAZUH_MANAGER: wazuh-manager
+    volumes:
+      - legacy-web-ossec-etc:/var/ossec/etc
+
+  web-attack:
+    <<: *endpoint
+    hostname: web-attack
+    container_name: web-attack
+    environment:
+      ENDPOINT_NAME: web-attack
+      LAB_PROFILE: web-attack
+      WAZUH_MANAGER: wazuh-manager
+    volumes:
+      - web-attack-ossec-etc:/var/ossec/etc
+
+  client-01:
+    <<: *endpoint
+    hostname: client-01
+    container_name: client-01
+    environment:
+      ENDPOINT_NAME: client-01
+      LAB_PROFILE: client-01
+      WAZUH_MANAGER: wazuh-manager
+    volumes:
+      - client-01-ossec-etc:/var/ossec/etc
+
+volumes:
+  wazuh_api_configuration:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_agentless:
+  wazuh_wodles:
+  filebeat_etc:
+  filebeat_var:
+  wazuh_indexer_data:
+  wazuh-indexer-data:
+  wazuh-dashboard-config:
+  wazuh-dashboard-custom:
+  web-safe-ossec-etc:
+  db-safe-ossec-etc:
+  legacy-web-ossec-etc:
+  web-attack-ossec-etc:
+  client-01-ossec-etc:
+
+networks:
+  labnet:
+    name: wazuh-security-lab-net

@@ -1,0 +1,94 @@
+# ==============================================================================
+# Wazuh Security Lab - custom SCA (Security Configuration Assessment) policy
+#
+# This is a TEACHING baseline for the lab's simulated application
+# (/etc/labapp/app.conf). Passing it does NOT imply CIS, ISO 27001, GDPR or any
+# other real-world compliance.
+#
+# The policy is deployed to every endpoint at
+# /var/ossec/ruleset/sca/security_lab_baseline.yml and referenced by the
+# agent's ossec.conf.
+#
+# /etc/labapp/app.conf contains simple key=value pairs:
+#   debug, anonymous_access, restrict_admin_access, audit_log
+# The endpoint baselines live in endpoints/baselines/<endpoint>.conf
+# ==============================================================================
+policy:
+  id: security_lab_baseline
+  file: 'security_lab_baseline.yml'
+  name: 'Wazuh Security Lab undervisningsbaseline'
+  description: 'Simuleret applikationsbaseline til undervisning (ikke reel CIS-compliance).'
+  references:
+    - 'Wazuh Security Lab (GitHub-projekt, se README)'
+requirements:
+  title: 'Krav for Wazuh Security Lab endpoints'
+  description: 'Endpointet skal have applikationskonfigurationen /etc/labapp/app.conf installeret.'
+  condition: all
+  rules:
+    - 'f:/etc/labapp/app.conf'
+checks:
+  # ---------------------------------------------------------------- 1: debug
+  - id: 10100
+    title: 'Debug-tilstand skal være deaktiveret i produktionsapplikationen'
+    description: 'Debug-tilstand viser detaljerede fejlbeskeder, som kan lække interne detaljer til en angriber.'
+    rationale: 'Fejlbeskeder i debug-tilstand kan afsløre stier, forespørgsler og legitimationsoplysninger.'
+    remediation: 'Sæt debug=false i /etc/labapp/app.conf og kør SCA-scanningen igen.'
+    compliance:
+      - standard: TRNG-SEC-LAB
+        reference:
+          - 'TRNG-SEC-LAB: 1.1 Debug deaktiveret'
+    condition: all required
+    rules:
+      - 'f:/etc/labapp/app.conf -> !r:^\s*debug\s*=\s*true'
+  # ------------------------------------------------------- 2: anonymous access
+  - id: 10101
+    title: 'Anonym adgang skal være deaktiveret'
+    description: 'Applikationen må ikke modtage anonyme (uautentificerede) forespørgsler.'
+    rationale: 'Anonym adgang omgår autentificeret adgangskontrol og umuliggør sporing af handlinger til en bruger.'
+    remediation: 'Sæt anonymous_access=false i /etc/labapp/app.conf og kør SCA-scanningen igen.'
+    compliance:
+      - standard: TRNG-SEC-LAB
+        reference:
+          - 'TRNG-SEC-LAB: 1.2 Anonym adgang deaktiveret'
+    condition: all required
+    rules:
+      - 'f:/etc/labapp/app.conf -> !r:^\s*anonymous_access\s*=\s*true'
+  # --------------------------------------------------- 3: safe file permissions
+  - id: 10102
+    title: 'Konfigurationsfilen /etc/labapp/app.conf skal have sikre filtilladelser (maks. 0640)'
+    description: 'Usikre filtilladelser gør det muligt for ikke-privilegerede brugere at ændre applikationens sikkerhedskonfiguration.'
+    rationale: 'Korrekte tilladelser forhindrer uautoriserede ændringer af sikkerhedsindstillingerne.'
+    remediation: 'Kør: chmod 640 /etc/labapp/app.conf og kør SCA-scanningen igen.'
+    compliance:
+      - standard: TRNG-SEC-LAB
+        reference:
+          - 'TRNG-SEC-LAB: 1.3 Sikre filtilladelser'
+    condition: all required
+    rules:
+      - 'c:stat -c %a /etc/labapp/app.conf -> r:^(600|640)$'
+  # --------------------------------------------------------- 4: audit logging
+  - id: 10103
+    title: 'Audit-logning skal være aktiveret'
+    description: 'Applikationens audit-logning skal være slået til, så sikkerhedsrelevante hændelser kan efterforskes.'
+    rationale: 'Uden audit-logning mangler bevisgrundlaget for efterforskning af hændelser.'
+    remediation: 'Sæt audit_log=true i /etc/labapp/app.conf og kør SCA-scanningen igen.'
+    compliance:
+      - standard: TRNG-SEC-LAB
+        reference:
+          - 'TRNG-SEC-LAB: 1.4 Audit-logning aktiveret'
+    condition: all required
+    rules:
+      - 'f:/etc/labapp/app.conf -> r:^\s*audit_log\s*=\s*true'
+  # -------------------------------------------------- 5: restricted admin access
+  - id: 10104
+    title: 'Administratoradgang skal være begrænset'
+    description: 'Adgangskontrol for administrationsfunktioner skal være aktiv, så kun autoriserede konti kan tilgå admin-funktioner.'
+    rationale: 'Begrænset admin-adgang reducerer risikoen for misbrug af privilegerede funktioner.'
+    remediation: 'Sæt restrict_admin_access=true i /etc/labapp/app.conf og kør SCA-scanningen igen.'
+    compliance:
+      - standard: TRNG-SEC-LAB
+        reference:
+          - 'TRNG-SEC-LAB: 1.5 Begrænset administratoradgang'
+    condition: all required
+    rules:
+      - 'f:/etc/labapp/app.conf -> r:^\s*restrict_admin_access\s*=\s*true'

@@ -1,0 +1,20 @@
+# Local secrets / configuration
+.env
+
+# Generated Wazuh TLS certificates (created by lab.sh up, never committed)
+wazuh/certs/wazuh_indexer_ssl_certs/
+
+# Simulation output and local state
+*.log
+!wazuh/*.conf
+events.json
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

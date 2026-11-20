@@ -1,0 +1,228 @@
+<!--
+  Wazuh Security Lab - custom detection rules
+
+  These rules work on JSON events produced by the simulation engine
+  (/var/log/security-lab/events.json on each endpoint, collected by the
+  wazuh logcollector with log_format=json).
+
+  Every synthetic event created by the lab contains:
+    "case_id": "SECURITY-LAB", "synthetic": true
+
+  The base rule 100100 therefore matches ONLY lab-generated events and every
+  lab alert description starts with "SECURITY-LAB:" so training alerts are
+  always recognizable.
+
+  Rule ID range 100100-100999 is reserved for this lab.
+  Students: add your own rules in 101000-101999 (see exercises, lesson 4).
+
+  Test syntax and matching with:
+    docker exec -it wazuh-manager /var/ossec/bin/wazuh-logtest
+  and paste one line of tests/sample_events.jsonl.
+
+  References:
+    https://documentation.wazuh.com/current/user-manual/ruleset/custom.html
+    https://documentation.wazuh.com/current/user-manual/ruleset/ruleset-xml-syntax/pcre2.html
+-->
+
+<group name="security_lab,training,web,authentication,sysmon,">
+
+  <!-- ==================================================================== -->
+  <!-- Base rules (level 0: no alert, but they anchor all lab rules)        -->
+  <!-- ==================================================================== -->
+
+  <!-- All synthetic lab JSON events. decoded_as json matches events collected
+       with log_format=json. Only SECURITY-LAB case events are handled. -->
+  <rule id="100100" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="case_id">^SECURITY-LAB$</field>
+    <description>SECURITY-LAB: syntetisk træningshændelse fra endpoint $(endpoint) (øjeblik: $(event_type)).</description>
+  </rule>
+
+  <!-- Normal web traffic (HTTP access log lines from the simulator). -->
+  <rule id="100101" level="0">
+    <if_sid>100100</if_sid>
+    <field name="event_type">^http_request$</field>
+    <description>SECURITY-LAB: webtrafik mod $(endpoint): $(method) $(url) ($(status)).</description>
+  </rule>
+
+  <!-- Other simulated activity: database, authentication, network, files,
+       exfiltration-sized transfers. -->
+  <rule id="100102" level="0">
+    <if_sid>100100</if_sid>
+    <field name="event_type">^(db_query|auth_attempt|network_connection|file_creation|config_change|suspicious_transfer)$</field>
+    <description>SECURITY-LAB: aktivitet paa $(endpoint): $(event_type).</description>
+  </rule>
+
+  <!-- ==================================================================== -->
+  <!-- Web attacks (endpoint: web-attack, lesson 3)                         -->
+  <!-- ==================================================================== -->
+
+  <!-- 1) SQL injection attempts (expected rule ID in the dashboard: 100110).
+       Matches the request URL only; the simulator never changes data. -->
+  <rule id="100110" level="8">
+    <if_sid>100101</if_sid>
+    <field name="url" type="pcre2">(?i)(?:union[\s+]+(?:all[\s+]+)?select|(?:or|and)[\s'"%]*\d+\s*['"%]?\s*=\s*['"%]?\s*\d+|information_schema|sleep[\s+]*\(|benchmark[\s+]*\()</field>
+    <description>SECURITY-LAB: muligt SQL-injektionsforsog fra $(srcip) mod $(url).</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <groups>web,attack,</groups>
+  </rule>
+
+  <!-- 2) Directory traversal attempts, including URL-encoded variants. -->
+  <rule id="100111" level="7">
+    <if_sid>100101</if_sid>
+    <field name="url" type="pcre2">(?i)(?:\.\./|%2e%2e%2f|%2e%2e/|\.\.%2f|\/\.\.\/etc(?:\/|$))</field>
+    <description>SECURITY-LAB: directory traversal-forsog fra $(srcip) mod $(url).</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <groups>web,attack,</groups>
+  </rule>
+
+  <!-- 3) Attempts to read sensitive files (information disclosure). -->
+  <rule id="100112" level="7">
+    <if_sid>100101</if_sid>
+    <field name="url" type="pcre2">(?i)^\/(?:etc\/(?:passwd|shadow)|proc\/self\/environ|\.env|\.git(?:\/|$|config|))</field>
+    <description>SECURITY-LAB: forsog paa at laese foelsom fil: $(url).</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <groups>web,attack,</groups>
+  </rule>
+
+  <!-- 4) Evidence of a possible webshell / remote code execution.
+       This is the signal that separates an attack ATTEMPT from a possible
+       successful COMPROMISE: the attacker can execute commands. -->
+  <rule id="100113" level="12">
+    <if_sid>100101</if_sid>
+    <field name="url" type="pcre2">(?i)(?:cmd\=|\?cmd=|shell|backdoor|passthru|system\()</field>
+    <description>SECURITY-LAB: mulig webshell/kommandoeksekvering paa $(endpoint): $(url) fra $(srcip).</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <groups>web,attack,</groups>
+  </rule>
+
+  <!-- 5) Repeated HTTP errors (error burst, e.g. after an attack). -->
+  <rule id="100114" level="0">
+    <if_sid>100101</if_sid>
+    <field name="status" type="pcre2">^[45]\d\d$</field>
+    <description>SECURITY-LAB: HTTP-fejl $(status) fra $(srcip) mod $(url).</description>
+  </rule>
+
+  <rule id="100115" level="6" frequency="8" timeframe="180">
+    <if_matched_sid>100114</if_matched_sid>
+    <same_source_ip />
+    <description>SECURITY-LAB: hojt antal HTTP-fejl fra samme kilde $(srcip) mod $(endpoint) (mulig scanning eller fejlbehandling).</description>
+    <groups>web,attack,recon,</groups>
+  </rule>
+
+  <!-- ==================================================================== -->
+  <!-- Authentication failures (endpoint: client-01, lesson 3)              -->
+  <!-- ==================================================================== -->
+
+  <!-- Single failed authentication (brute-force building block). -->
+  <rule id="100120" level="3">
+    <if_sid>100102</if_sid>
+    <field name="event_type">^auth_attempt$</field>
+    <field name="result">^failure$</field>
+    <description>SECURITY-LAB: mislykket login for $(user) fra $(srcip) mod $(service).</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <groups>authentication,authentication_failures,</groups>
+  </rule>
+
+  <!-- Successful authentication (baseline for lesson 4 tuning). -->
+  <rule id="100121" level="0">
+    <if_sid>100102</if_sid>
+    <field name="event_type">^auth_attempt$</field>
+    <field name="result">^success$</field>
+    <description>SECURITY-LAB: vellykket login for $(user) fra $(srcip) mod $(service).</description>
+  </rule>
+
+  <!-- Excessive failed logins = brute force. Fires after 8 failures from
+       the same source IP within 2 minutes. -->
+  <rule id="100122" level="10" frequency="8" timeframe="120">
+    <if_matched_sid>100120</if_matched_sid>
+    <same_source_ip />
+    <description>SECURITY-LAB: mange mislykkede logins (brute force) fra $(srcip) mod $(endpoint).</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <groups>authentication,authentication_failures,attack,</groups>
+  </rule>
+
+  <!-- Successful login from an external (documentation-reserved) address
+       after/while an attack is in progress: possible credential compromise. -->
+  <rule id="100123" level="12">
+    <if_sid>100121</if_sid>
+    <field name="srcip" type="pcre2">^203\.0\.113\.\d{1,3}$</field>
+    <description>SECURITY-LAB: vellykket ekstern login fra mistaenkelig kilde $(srcip) for bruger $(user) - mulig kompromittering.</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <groups>authentication,attack,</groups>
+  </rule>
+
+  <!-- ==================================================================== -->
+  <!-- File events (endpoint: client-01, lesson 3; FIM adds its own alerts) -->
+  <!-- ==================================================================== -->
+
+  <!-- Suspicious file creations: persistence-looking artifacts. -->
+  <rule id="100130" level="9">
+    <if_sid>100102</if_sid>
+    <field name="event_type">^file_creation$</field>
+    <field name="path" type="pcre2">(?i)(?:authorized_keys|\.ssh\/|\/etc\/cron|systemd\/|\.bashrc|\/root\/|shadow|shell\.php|\.config/persist)</field>
+    <description>SECURITY-LAB: mistaenkelig filoprettelse paa $(endpoint): $(path) af $(user).</description>
+    <mitre>
+      <id>T1053</id>
+    </mitre>
+    <groups>sysmon,persistence,attack,</groups>
+  </rule>
+
+  <!-- ==================================================================== -->
+  <!-- Network / exfiltration indicators (endpoint: client-01)              -->
+  <!-- ==================================================================== -->
+
+  <!-- Outbound connection to a documentation-reserved training IoC range. -->
+  <rule id="100140" level="8">
+    <if_sid>100102</if_sid>
+    <field name="event_type">^network_connection$</field>
+    <field name="dstip" type="pcre2">^198\.51\.100\.\d{1,3}$</field>
+    <description>SECURITY-LAB: udgaaende forbindelse til mistaenkelig adresse $(dstip):$(dstport) fra $(endpoint).</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <groups>sysmon,ioc,attack,</groups>
+  </rule>
+
+  <!-- Simulated data exfiltration: large outbound transfer to the training
+       IoC range. The simulator transfers nothing real; "result" is always
+       "simulated". -->
+  <rule id="100141" level="12">
+    <if_sid>100102</if_sid>
+    <field name="event_type">^suspicious_transfer$</field>
+    <field name="result">^simulated$</field>
+    <description>SECURITY-LAB: muligt dataeksfiltreringssignifikation: $(bytes) bytes fra $(endpoint) til $(dstip):$(dstport).</description>
+    <mitre>
+      <id>T1048</id>
+    </mitre>
+    <groups>sysmon,ioc,exfiltration,attack,</groups>
+  </rule>
+
+  <!-- ==================================================================== -->
+  <!-- Configuration events (endpoint: legacy-web, lesson 2)                -->
+  <!-- Real detection of the file change itself comes from FIM/syscheck;     -->
+  <!-- this rule makes the *meaning* of the change searchable.              -->
+  <!-- ==================================================================== -->
+
+  <rule id="100150" level="5">
+    <if_sid>100102</if_sid>
+    <field name="event_type">^config_change$</field>
+    <description>SECURITY-LAB: aendret konfiguration paa $(endpoint): $(detail).</description>
+    <groups>config,</groups>
+  </rule>
+
+</group>
