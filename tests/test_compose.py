@@ -147,6 +147,42 @@ def evaluate_baseline(endpoint):
     return results
 
 
+class TestWazuhDeploymentRegressions(unittest.TestCase):
+    """Regressions found during live deployment on Apple Silicon."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(COMPOSE, encoding="utf-8") as fh:
+            cls.doc = yaml.safe_load(fh)
+        cls.services = cls.doc["services"]
+
+    def test_indexer_mounts_internal_users(self):
+        # Without this mount the wazuh-indexer image keeps the OpenSearch
+        # DEMO internal_users.yml -> admin password is literally "admin" and
+        # every component authenticating with SecretPassword fails
+        # (Unauthorized), so no alerts are ever delivered to the index.
+        mounts = "\n".join(self.services["wazuh-indexer"]["volumes"])
+        self.assertIn(
+            "internal_users.yml:/usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml",
+            mounts)
+
+    def test_rule_fields_do_not_use_osregex_alternation(self):
+        # Wazuh's default OS_Regex engine does NOT support '|'; when a field
+        # pattern needs alternation it must declare type="pcre2"
+        # (regression test for the "Syntax error on tag 'event_type' in rule
+        # 100102" manager startup failure).
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(os.path.join(REPO_ROOT, "wazuh", "rules",
+                                     "security_lab_rules.xml"))
+        for r in tree.getroot().findall("rule"):
+            for f in r.findall("field"):
+                if f.get("type") in (None, "osregex", "osmatch"):
+                    self.assertNotIn(
+                        "|", (f.text or ""),
+                        f"rule {r.get('id')} field {f.get('name')} "
+                        "must use pcre2 for alternation")
+
+
 class TestBaselineIntendedResults(unittest.TestCase):
     def test_compliant_endpoints_pass_all_checks(self):
         for ep in ("web-safe", "db-safe", "client-01", "web-attack"):

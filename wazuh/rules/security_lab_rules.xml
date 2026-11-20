@@ -49,7 +49,7 @@
        exfiltration-sized transfers. -->
   <rule id="100102" level="0">
     <if_sid>100100</if_sid>
-    <field name="event_type">^(db_query|auth_attempt|network_connection|file_creation|config_change|suspicious_transfer)$</field>
+    <field name="event_type" type="pcre2">^(?:db_query|auth_attempt|network_connection|file_creation|config_change|suspicious_transfer)$</field>
     <description>SECURITY-LAB: aktivitet paa $(endpoint): $(event_type).</description>
   </rule>
 

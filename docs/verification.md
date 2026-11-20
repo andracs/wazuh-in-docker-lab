@@ -50,6 +50,26 @@ the included `tests/integration_check.sh`:
 8. Remediation flips SCA to 5/5; identity stability across restarts; full
    stop/start cycle.
 
+## Defects found and fixed during live deployment (Apple Silicon M4 Max)
+
+Two real defects were discovered on a live deployment and fixed + covered by
+regression tests:
+
+1. `Syntax error on tag 'event_type' in rule 100102` -> manager exited at
+   startup. Cause: regex alternation (`|`) used in a plain `<field>` pattern;
+   Wazuh's default OS_Regex engine does not support it. Fix: `type="pcre2"`.
+   Regression test: `test_rule_fields_do_not_use_osregex_alternation`.
+2. Indexer REST API returned `Unauthorized` for `admin:SecretPassword`.
+   Cause: `internal_users.yml` (the officially shipped file whose admin hash
+   matches `SecretPassword`) was not mounted into wazuh-indexer, so the image
+   kept the OpenSearch *demo* internal users (`admin`/`admin`). Fix: mount
+   `wazuh/indexer/internal_users.yml` to
+   `/usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml`.
+   Regression test: `test_indexer_mounts_internal_users`.
+   Note: applying this fix requires recreating the indexer volume
+   (`docker compose down -v`), since the security index caches the demo
+   credentials after first initialization.
+
 ## Known risks to watch on first real run
 
 - `wazuh-agent` Debian package name/version pinning (`4.14.10-1`) – if the
