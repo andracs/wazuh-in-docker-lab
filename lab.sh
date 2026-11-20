@@ -54,6 +54,13 @@ load_env() {
   # shellcheck disable=SC1091
   . ./.env
   set +a
+  # Optional image platform override (see .env.example, Apple Silicon note).
+  if [ -n "${WAZUH_PLATFORM:-}" ]; then
+    export DOCKER_DEFAULT_PLATFORM="${WAZUH_PLATFORM}"
+    blue "Image platform override active: ${WAZUH_PLATFORM}"
+  else
+    unset DOCKER_DEFAULT_PLATFORM || true
+  fi
 }
 
 api() {

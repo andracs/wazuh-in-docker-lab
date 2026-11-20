@@ -60,3 +60,12 @@ the included `tests/integration_check.sh`:
   them back-to-back, so this should hold comfortably.
 - Very slow hosts: the first `./lab.sh up` may need more than the 7-minute
   wait loop; rerun `./lab.sh status` until healthy.
+- Apple Silicon (confirmed on M4 Max, native linux/arm64, image 4.14.10):
+  the wazuh-manager container crashes with `Illegal instruction` in
+  `/var/ossec/framework/python/bin/python3 create_user.py` during init.
+  The bundled binaries in the official arm64 image target Graviton-class
+  CPUs and use instructions Apple Silicon does not implement. Workaround
+  implemented and documented: `WAZUH_PLATFORM=linux/amd64` in `.env`
+  (exported as `DOCKER_DEFAULT_PLATFORM` by lab.sh) + Rosetta emulation in
+  Docker Desktop. The native-arm64 path is therefore UNVERIFIED on Apple
+  Silicon; use the amd64/Rosetta path.

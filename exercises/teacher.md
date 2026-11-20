@@ -236,6 +236,7 @@ Al ingestionstid: forvent 30-90 sekunder fra aktivering til dashboard
 | Windows Docker Desktop: port 8443 optaget | `set DASHBOARD_PORT=...` i `.env` og `docker compose up -d` |
 | Apple Silicon ekstrem langsom | Rosetta er ikke påkrævet (billeder er native arm64) – tjek at Docker Desktop har fået ≥ 4 GB RAM |
 | Intet i Security events efter scenario | vent 1-2 minuts ingestion; tjek `docker compose exec <ep> tail -5 /var/log/security-lab/events.json` og at agenten er aktiv |
+| Apple Silicon/M4: manager crasher med `Illegal instruction` (create_user.py) | Officielle arm64-billeder bygger til Graviton-CPU'er (SVE-instruktioner, som Apple mangler). Aktivér Rosetta-emulation i Docker Desktop, sæt `WAZUH_PLATFORM=linux/amd64` i `.env`, kør `docker compose down -v && ./lab.sh up` |
 | `wazuh-logtest` findes ikke | stien er `/var/ossec/bin/wazuh-logtest` (i managercontaineren) |
 
 ## 11. Forslag til evaluering/bedømmelse

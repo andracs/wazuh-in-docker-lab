@@ -218,6 +218,7 @@ agent-identitetsstabilitet. Status for den aktuelle udgivelse findes i
 | Port 8443 er optaget | sæt `DASHBOARD_PORT=...` i `.env` og `docker compose up -d` |
 | Certifikat-/TLS-fejl | slet `wazuh/certs/wazuh_indexer_ssl_certs/` og kør `./lab.sh up` igen |
 | Ingen alarmer efter scenario | vent 1–2 min; `docker compose exec <endpoint> tail -5 /var/log/security-lab/events.json`; tjek at agenten er aktiv |
+| **Apple Silicon: wazuh-manager crasher med `Illegal instruction`** | Faktisk fejl: `create_user.py: Illegal instruction`. Årsag: officielle arm64-billeder er bygget til Graviton-klassens CPU'er (bruger SVE, som Apple Silicon ikke implementerer). Løsning: 1) aktivér "Use Rosetta for x86_64/amd64 emulation on Apple silicon" i Docker Desktop (Settings → General), 2) sæt `WAZUH_PLATFORM=linux/amd64` i `.env`, 3) `docker compose down -v` og `./lab.sh up` igen |
 | Regler ændres ikke | regelfilen mountes til manageren ved hver start (`wazuh-config-mount`); kør `docker compose restart wazuh-manager` |
 
 ## 11. Sikkerhedsafgrænsninger
