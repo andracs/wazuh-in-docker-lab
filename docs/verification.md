@@ -70,6 +70,16 @@ regression tests:
    (`docker compose down -v`), since the security index caches the demo
    credentials after first initialization.
 
+3. `Failure to read rule 100110. Field 'url' is static.` -> analysisd exited
+   and ALL manager daemons were down. Cause: matching rules used
+   `<field name="url|status|srcip|dstip">`; those names are STATIC Wazuh rule
+   fields (the JSON decoder maps them into static slots), so they must be
+   referenced with the static tags `<url>`, `<status>`, `<srcip>`, `<dstip>`.
+   Fix applied to rules 100110-100114, 100123, 100140; regression tests:
+   `test_no_field_uses_a_static_rule_name`,
+   `test_web_rules_use_static_url_tags` (offline matcher extended to
+   emulate the static tags).
+
 ## Known risks to watch on first real run
 
 - `wazuh-agent` Debian package name/version pinning (`4.14.10-1`) – if the

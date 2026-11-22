@@ -61,7 +61,7 @@
        Matches the request URL only; the simulator never changes data. -->
   <rule id="100110" level="8">
     <if_sid>100101</if_sid>
-    <field name="url" type="pcre2">(?i)(?:union[\s+]+(?:all[\s+]+)?select|(?:or|and)[\s'"%]*\d+\s*['"%]?\s*=\s*['"%]?\s*\d+|information_schema|sleep[\s+]*\(|benchmark[\s+]*\()</field>
+    <url type="pcre2">(?i)(?:union[\s+]+(?:all[\s+]+)?select|(?:or|and)[\s'"%]*\d+\s*['"%]?\s*=\s*['"%]?\s*\d+|information_schema|sleep[\s+]*\(|benchmark[\s+]*\()</url>
     <description>SECURITY-LAB: muligt SQL-injektionsforsog fra $(srcip) mod $(url).</description>
     <mitre>
       <id>T1190</id>
@@ -72,7 +72,7 @@
   <!-- 2) Directory traversal attempts, including URL-encoded variants. -->
   <rule id="100111" level="7">
     <if_sid>100101</if_sid>
-    <field name="url" type="pcre2">(?i)(?:\.\./|%2e%2e%2f|%2e%2e/|\.\.%2f|\/\.\.\/etc(?:\/|$))</field>
+    <url type="pcre2">(?i)(?:\.\./|%2e%2e%2f|%2e%2e/|\.\.%2f|\/\.\.\/etc(?:\/|$))</url>
     <description>SECURITY-LAB: directory traversal-forsog fra $(srcip) mod $(url).</description>
     <mitre>
       <id>T1083</id>
@@ -83,7 +83,7 @@
   <!-- 3) Attempts to read sensitive files (information disclosure). -->
   <rule id="100112" level="7">
     <if_sid>100101</if_sid>
-    <field name="url" type="pcre2">(?i)^\/(?:etc\/(?:passwd|shadow)|proc\/self\/environ|\.env|\.git(?:\/|$|config|))</field>
+    <url type="pcre2">(?i)^\/(?:etc\/(?:passwd|shadow)|proc\/self\/environ|\.env|\.git(?:\/|$|config|))</url>
     <description>SECURITY-LAB: forsog paa at laese foelsom fil: $(url).</description>
     <mitre>
       <id>T1083</id>
@@ -96,7 +96,7 @@
        successful COMPROMISE: the attacker can execute commands. -->
   <rule id="100113" level="12">
     <if_sid>100101</if_sid>
-    <field name="url" type="pcre2">(?i)(?:cmd\=|\?cmd=|shell|backdoor|passthru|system\()</field>
+    <url type="pcre2">(?i)(?:cmd\=|\?cmd=|shell|backdoor|passthru|system\()</url>
     <description>SECURITY-LAB: mulig webshell/kommandoeksekvering paa $(endpoint): $(url) fra $(srcip).</description>
     <mitre>
       <id>T1505.003</id>
@@ -107,7 +107,7 @@
   <!-- 5) Repeated HTTP errors (error burst, e.g. after an attack). -->
   <rule id="100114" level="0">
     <if_sid>100101</if_sid>
-    <field name="status" type="pcre2">^[45]\d\d$</field>
+    <status type="pcre2">^[45]\d\d$</status>
     <description>SECURITY-LAB: HTTP-fejl $(status) fra $(srcip) mod $(url).</description>
   </rule>
 
@@ -158,7 +158,7 @@
        after/while an attack is in progress: possible credential compromise. -->
   <rule id="100123" level="12">
     <if_sid>100121</if_sid>
-    <field name="srcip" type="pcre2">^203\.0\.113\.\d{1,3}$</field>
+    <srcip type="pcre2">^203\.0\.113\.\d{1,3}$</srcip>
     <description>SECURITY-LAB: vellykket ekstern login fra mistaenkelig kilde $(srcip) for bruger $(user) - mulig kompromittering.</description>
     <mitre>
       <id>T1078</id>
@@ -190,7 +190,7 @@
   <rule id="100140" level="8">
     <if_sid>100102</if_sid>
     <field name="event_type">^network_connection$</field>
-    <field name="dstip" type="pcre2">^198\.51\.100\.\d{1,3}$</field>
+    <dstip type="pcre2">^198\.51\.100\.\d{1,3}$</dstip>
     <description>SECURITY-LAB: udgaaende forbindelse til mistaenkelig adresse $(dstip):$(dstport) fra $(endpoint).</description>
     <mitre>
       <id>T1071</id>

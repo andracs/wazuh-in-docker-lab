@@ -51,17 +51,28 @@ MALICIOUS_RULES = {"100110", "100111", "100112", "100113", "100115",
                    "100122", "100123", "100130", "100140", "100141"}
 
 
+# Static rule tags (Wazuh analysisd treats these names as STATIC fields:
+# using them in <field name=...> makes the rules fail to load with
+# "Field 'url' is static"). The JSON decoder maps these keys to static slots,
+# so rules must reference them via the static tags.
+STATIC_TAGS = {"url", "status", "srcip", "dstip", "srcport", "dstport",
+               "user", "protocol", "id", "location", "action", "system_name"}
+
+
 def load_rules():
     tree = ET.parse(RULES_FILE)
     rules = {}
     for r in tree.getroot().findall("rule"):
+        fields = [(e.get("name"), e.text, e.get("type", "osregex"))
+                  for e in r.findall("field")]
+        # static tags behave like field constraints in the offline matcher
+        fields += [(tag, e.text, e.get("type", "osmatch"))
+                   for tag in STATIC_TAGS for e in r.findall(tag)]
         rule = {
             "id": r.get("id"),
             "level": int(r.get("level")),
             "if_sid": [e.text.strip() for e in r.findall("if_sid")],
-            "fields": [(e.get("name"), e.text,
-                        e.get("type", "osregex"))
-                       for e in r.findall("field")],
+            "fields": fields,
             "frequency": int(r.get("frequency", "1")),
         }
         rules[rule["id"]] = rule
@@ -236,6 +247,28 @@ class TestSampleEventMatching(unittest.TestCase):
             if normal:
                 self.assertFalse(self.fired(ev) & MALICIOUS_RULES,
                                  (ev, self.fired(ev)))
+
+    def test_no_field_uses_a_static_rule_name(self):
+        # regression for live failure: "Failure to read rule 100110.
+        #  Field 'url' is static." - Wazuh refuses <field name="url"> etc.
+        tree = ET.parse(RULES_FILE)
+        offenders = []
+        for r in tree.getroot().findall("rule"):
+            for f in r.findall("field"):
+                if (f.get("name") or "").lower() in {t.lower() for t in STATIC_TAGS}:
+                    offenders.append((r.get("id"), f.get("name")))
+        self.assertEqual(offenders, [])
+
+    def test_web_rules_use_static_url_tags(self):
+        # the JSON decoder maps 'url'/'status'/'srcip'/'dstip' into static
+        # slots, so web request rules must match with <url>/<status> tags
+        tree = ET.parse(RULES_FILE)
+        by_id = {r.get("id"): r for r in tree.getroot().findall("rule")}
+        for rid in ("100110", "100111", "100112", "100113"):
+            self.assertIsNotNone(by_id[rid].find("url"))
+        self.assertIsNotNone(by_id["100114"].find("status"))
+        self.assertIsNotNone(by_id["100123"].find("srcip"))
+        self.assertIsNotNone(by_id["100140"].find("dstip"))
 
     def test_frequency_rules_reference_existing_bases(self):
         tree = ET.parse(RULES_FILE)
